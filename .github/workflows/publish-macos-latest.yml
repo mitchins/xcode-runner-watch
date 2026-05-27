@@ -15,11 +15,14 @@ concurrency:
 jobs:
   publish:
     runs-on: macos-latest
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
           ref: ${{ github.ref_name }}
+          persist-credentials: false
 
       - name: Capture manifest
         id: capture
@@ -30,7 +33,9 @@ jobs:
           temp_manifest="$(mktemp)"
           RUNNER_LABEL="macos-latest" ./scripts/capture-xcode-runner-manifest.sh "$temp_manifest"
 
-          if [[ -f latest/macos-latest.json ]] && python3 - "$temp_manifest" latest/macos-latest.json <<'PY'
+          if [[ -f latest/macos-latest.json ]]; then
+            set +e
+            python3 - "$temp_manifest" latest/macos-latest.json <<'PY'
           import json
           import sys
           from pathlib import Path
@@ -44,7 +49,11 @@ jobs:
                       if key != "observed_at"
                   }
               if isinstance(value, list):
-                  return [canonical(item) for item in value]
+                  items = [canonical(item) for item in value]
+                  return sorted(
+                      items,
+                      key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")),
+                  )
               return value
 
 
@@ -52,12 +61,20 @@ jobs:
           existing_path = Path(sys.argv[2])
           incoming = canonical(json.loads(incoming_path.read_text(encoding="utf-8")))
           existing = canonical(json.loads(existing_path.read_text(encoding="utf-8")))
-          sys.exit(0 if incoming == existing else 1)
+          sys.exit(0 if incoming == existing else 10)
           PY
-          then
-            echo "changed=false" >>"$GITHUB_OUTPUT"
-            rm -f "$temp_manifest"
-            exit 0
+            status=$?
+            set -e
+
+            if [[ $status -eq 0 ]]; then
+              echo "changed=false" >>"$GITHUB_OUTPUT"
+              rm -f "$temp_manifest"
+              exit 0
+            elif [[ $status -eq 10 ]]; then
+              :
+            else
+              exit "$status"
+            fi
           fi
 
           mkdir -p latest
@@ -79,5 +96,6 @@ jobs:
             exit 0
           fi
 
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git commit -m "Update macos-latest manifest"
           git push

@@ -44,7 +44,7 @@ RUNNER_LABEL="$RUNNER_LABEL" \
 OUTPUT_PATH="$output_path" \
 WORKDIR="$workdir" \
 SELECTED_XCODE_PATH="$(xcode-select -p)" \
-UNAME_OUTPUT="$(uname -a)" \
+UNAME_OUTPUT="$(uname -srvm)" \
 MACOS_PRODUCT_NAME="$(sw_vers -productName)" \
 MACOS_PRODUCT_VERSION="$(sw_vers -productVersion)" \
 MACOS_BUILD_VERSION="$(sw_vers -buildVersion)" \
@@ -98,6 +98,18 @@ def capture_swift_version(raw: str) -> dict:
 
 workdir = Path(os.environ["WORKDIR"])
 output_path = Path(os.environ["OUTPUT_PATH"])
+devices_available = read_json(workdir / "simctl-devices-available.json")
+sanitized_devices = {
+    runtime: [
+        {
+            "name": device.get("name"),
+            "deviceTypeIdentifier": device.get("deviceTypeIdentifier"),
+            "isAvailable": device.get("isAvailable"),
+        }
+        for device in devices
+    ]
+    for runtime, devices in sorted(devices_available.get("devices", {}).items())
+}
 
 manifest = canonical(
     {
@@ -129,9 +141,7 @@ manifest = canonical(
         "simulators": {
             "runtimes": read_json(workdir / "simctl-runtimes.json"),
             "device_types": read_json(workdir / "simctl-devicetypes.json"),
-            "devices_available": read_json(
-                workdir / "simctl-devices-available.json"
-            ),
+            "devices_available": sanitized_devices,
         },
     }
 )

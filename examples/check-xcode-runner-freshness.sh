@@ -28,7 +28,14 @@ workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
 
 downloaded_manifest="$workdir/manifest.json"
-curl -fsSL "$manifest_url" -o "$downloaded_manifest"
+curl -fsSL \
+  --connect-timeout 10 \
+  --max-time 120 \
+  --retry 3 \
+  --retry-delay 2 \
+  --retry-connrefused \
+  "$manifest_url" \
+  -o "$downloaded_manifest"
 
 canonicalize() {
   local source_path="$1"
@@ -48,7 +55,11 @@ def canonical(value):
             if key != "observed_at"
         }
     if isinstance(value, list):
-        return [canonical(item) for item in value]
+        items = [canonical(item) for item in value]
+        return sorted(
+            items,
+            key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")),
+        )
     return value
 
 

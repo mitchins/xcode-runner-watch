@@ -23,7 +23,7 @@ The manifest includes:
 - selected Xcode path and `xcodebuild -version`
 - `swift --version`
 - SDK versions for `iphoneos`, `iphonesimulator`, and `macosx`
-- `simctl` JSON for runtimes, device types, and available devices
+- `simctl` JSON for runtimes, device types, and a stable available-devices projection
 
 The JSON is rendered deterministically. `observed_at` is included for traceability, but repository updates only happen when the meaningful environment data changes.
 

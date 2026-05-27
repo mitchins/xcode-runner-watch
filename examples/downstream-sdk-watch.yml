@@ -17,11 +17,13 @@ jobs:
       BASELINE_PATH: .ci/xcode-runner-baseline.json
       UPDATE_BRANCH: ci/xcode-runner-watch
       GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
           ref: ${{ github.ref_name }}
+          persist-credentials: false
 
       - name: Check for manifest changes
         id: check
@@ -30,9 +32,17 @@ jobs:
           set -euo pipefail
 
           downloaded_manifest="$RUNNER_TEMP/xcode-runner-watch-manifest.json"
-          curl -fsSL "$MANIFEST_URL" -o "$downloaded_manifest"
+          curl -fsSL \
+            --connect-timeout 10 \
+            --max-time 120 \
+            --retry 3 \
+            --retry-delay 2 \
+            --retry-connrefused \
+            "$MANIFEST_URL" \
+            -o "$downloaded_manifest"
 
-          if python3 - "$downloaded_manifest" "$BASELINE_PATH" <<'PY'
+          set +e
+          python3 - "$downloaded_manifest" "$BASELINE_PATH" <<'PY'
           import json
           import sys
           from pathlib import Path
@@ -46,7 +56,11 @@ jobs:
                       if key != "observed_at"
                   }
               if isinstance(value, list):
-                  return [canonical(item) for item in value]
+                  items = [canonical(item) for item in value]
+                  return sorted(
+                      items,
+                      key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")),
+                  )
               return value
 
 
@@ -57,15 +71,20 @@ jobs:
 
           incoming = canonical(json.loads(incoming_path.read_text(encoding="utf-8")))
           baseline = canonical(json.loads(baseline_path.read_text(encoding="utf-8")))
-          sys.exit(0 if incoming == baseline else 1)
+          sys.exit(0 if incoming == baseline else 10)
           PY
-          then
+          status=$?
+          set -e
+
+          if [[ $status -eq 0 ]]; then
             echo "changed=false" >>"$GITHUB_OUTPUT"
             exit 0
+          elif [[ $status -eq 10 ]]; then
+            echo "changed=true" >>"$GITHUB_OUTPUT"
+            echo "downloaded_manifest=$downloaded_manifest" >>"$GITHUB_OUTPUT"
+          else
+            exit "$status"
           fi
-
-          echo "changed=true" >>"$GITHUB_OUTPUT"
-          echo "downloaded_manifest=$downloaded_manifest" >>"$GITHUB_OUTPUT"
 
       - name: Update baseline branch
         if: steps.check.outputs.changed == 'true'
@@ -92,6 +111,7 @@ jobs:
             exit 0
           fi
 
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git commit -m "Update Xcode runner baseline"
           git push --force-with-lease --set-upstream origin "$UPDATE_BRANCH"
 
@@ -119,7 +139,7 @@ jobs:
 
           gh pr create \
             --repo "$GITHUB_REPOSITORY" \
-            --base "${GITHUB_REF_NAME}" \
+            --base "${{ github.event.repository.default_branch }}" \
             --head "$UPDATE_BRANCH" \
             --title "Update Xcode runner baseline" \
             --body "This PR updates \`$BASELINE_PATH\` to match the latest published macOS runner manifest from \`xcode-runner-watch\`."

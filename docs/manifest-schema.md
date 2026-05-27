@@ -7,7 +7,7 @@
 | `manifest_version` | integer | Schema version for the document format. |
 | `observed_at` | string | UTC timestamp in RFC 3339 format for when the manifest was captured. |
 | `runner_label` | string | Workflow runner label used for capture, for example `macos-latest`. |
-| `system` | object | Host macOS metadata and `uname` output. |
+| `system` | object | Host macOS metadata and `uname -srvm` output. |
 | `xcode` | object | Selected Xcode path and `xcodebuild -version` output. |
 | `swift` | object | `swift --version` output and parsed fields when available. |
 | `sdks` | object | Version strings for `iphoneos`, `iphonesimulator`, and `macosx`. |
@@ -20,7 +20,7 @@
 | `product_name` | string | `sw_vers -productName` |
 | `product_version` | string | `sw_vers -productVersion` |
 | `build_version` | string | `sw_vers -buildVersion` |
-| `uname` | string | `uname -a` |
+| `uname` | string | `uname -srvm` |
 
 ## `xcode`
 
@@ -61,7 +61,7 @@
 | --- | --- | --- |
 | `runtimes` | object | `xcrun simctl list runtimes --json` |
 | `device_types` | object | `xcrun simctl list devicetypes --json` |
-| `devices_available` | object | `xcrun simctl list devices available --json` |
+| `devices_available` | object | Stable projection of `xcrun simctl list devices available --json` |
 
 ## Change comparison
 
