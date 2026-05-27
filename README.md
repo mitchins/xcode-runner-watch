@@ -27,6 +27,8 @@ The manifest includes:
 
 The JSON is rendered deterministically. `observed_at` is included for traceability, but repository updates only happen when the meaningful environment data changes.
 
+v1 intentionally focuses on the macOS runner and the iPhone simulator/runtime surface that most app teams consume day to day. watchOS, tvOS, and visionOS can be added later if this repo grows into a broader Apple-platform tracker.
+
 See [`docs/manifest-schema.md`](docs/manifest-schema.md) for the field-level schema.
 
 ## Repository automation

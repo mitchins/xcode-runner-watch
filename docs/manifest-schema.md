@@ -2,6 +2,8 @@
 
 `latest/macos-latest.json` is a deterministic JSON document with this top-level shape:
 
+The initial schema keeps scope narrow on purpose: it tracks the macOS runner plus the iPhone simulator/runtime environment. That keeps the published manifest useful for the common iOS/macOS build path without widening churn to every Apple platform on day one.
+
 | Field | Type | Description |
 | --- | --- | --- |
 | `manifest_version` | integer | Schema version for the document format. |
