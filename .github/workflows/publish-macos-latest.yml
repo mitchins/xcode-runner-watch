@@ -16,7 +16,7 @@ jobs:
   publish:
     runs-on: macos-latest
     env:
-      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -24,78 +24,104 @@ jobs:
           ref: ${{ github.ref_name }}
           persist-credentials: false
 
-      - name: Capture manifest
+      - name: Capture and compare runner manifest
         id: capture
         shell: bash
         run: |
           set -euo pipefail
 
-          temp_manifest="$(mktemp)"
+          temp_manifest="$RUNNER_TEMP/macos-latest.json"
+          report_json="$RUNNER_TEMP/runner-changes.json"
+          release_notes="$RUNNER_TEMP/release-notes.md"
           RUNNER_LABEL="macos-latest" ./scripts/capture-xcode-runner-manifest.sh "$temp_manifest"
 
-          if [[ -f latest/macos-latest.json ]]; then
-            set +e
-            python3 - "$temp_manifest" latest/macos-latest.json <<'PY'
-          import json
-          import sys
-          from pathlib import Path
+          python3 scripts/compare_xcode_runner_manifest.py \
+            --baseline latest/macos-latest.json \
+            --incoming "$temp_manifest" \
+            --base-commit "$GITHUB_SHA" \
+            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --report-json "$report_json" \
+            --release-notes "$release_notes" \
+            --github-output "$GITHUB_OUTPUT"
 
+          echo "manifest_path=$temp_manifest" >>"$GITHUB_OUTPUT"
+          echo "release_notes_path=$release_notes" >>"$GITHUB_OUTPUT"
 
-          def canonical(value):
-              if isinstance(value, dict):
-                  return {
-                      key: canonical(item)
-                      for key, item in sorted(value.items())
-                      if key != "observed_at"
-                  }
-              if isinstance(value, list):
-                  items = [canonical(item) for item in value]
-                  return sorted(
-                      items,
-                      key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")),
-                  )
-              return value
-
-
-          incoming_path = Path(sys.argv[1])
-          existing_path = Path(sys.argv[2])
-          incoming = canonical(json.loads(incoming_path.read_text(encoding="utf-8")))
-          existing = canonical(json.loads(existing_path.read_text(encoding="utf-8")))
-          sys.exit(0 if incoming == existing else 10)
-          PY
-            status=$?
-            set -e
-
-            if [[ $status -eq 0 ]]; then
-              echo "changed=false" >>"$GITHUB_OUTPUT"
-              rm -f "$temp_manifest"
-              exit 0
-            elif [[ $status -eq 10 ]]; then
-              :
-            else
-              exit "$status"
-            fi
+          if [[ "$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["changed"]).lower())' "$report_json")" == "true" ]]; then
+            cat "$release_notes" >>"$GITHUB_STEP_SUMMARY"
+          elif [[ "$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["baseline_exists"]).lower())' "$report_json")" == "false" ]]; then
+            echo "Saved the initial macos-latest baseline. No change release is created for the first snapshot." >>"$GITHUB_STEP_SUMMARY"
+          else
+            echo "No meaningful Xcode, SDK, macOS, Swift, or simulator runtime changes." >>"$GITHUB_STEP_SUMMARY"
           fi
 
-          mkdir -p latest
-          mv "$temp_manifest" latest/macos-latest.json
-          echo "changed=true" >>"$GITHUB_OUTPUT"
-
-      - name: Commit manifest
+      - name: Publish change release
         if: steps.capture.outputs.changed == 'true'
         shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.capture.outputs.release_tag }}
+          RELEASE_NOTES_PATH: ${{ steps.capture.outputs.release_notes_path }}
         run: |
           set -euo pipefail
 
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; continuing the interrupted publication." >>"$GITHUB_STEP_SUMMARY"
+          else
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "macOS runner environment changed" \
+              --notes-file "$RELEASE_NOTES_PATH"
+          fi
+
+      - name: Commit manifest and monthly health timestamp
+        shell: bash
+        env:
+          MANIFEST_CHANGED: ${{ steps.capture.outputs.changed }}
+          INITIALIZE: ${{ steps.capture.outputs.initialize }}
+          MANIFEST_PATH: ${{ steps.capture.outputs.manifest_path }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$MANIFEST_CHANGED" == "true" || "$INITIALIZE" == "true" ]]; then
+            mkdir -p latest
+            cp "$MANIFEST_PATH" latest/macos-latest.json
+          fi
+
+          python3 - latest/last-successful-health.txt <<'PY'
+          from datetime import datetime, timezone
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          today = datetime.now(timezone.utc).date()
+          if not path.exists():
+              due = True
+          else:
+              last_success = date.fromisoformat(path.read_text(encoding="utf-8").strip())
+              due = (today - last_success).days >= 28
+          if due:
+              path.write_text(today.isoformat() + "\n", encoding="utf-8")
+          PY
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add latest/macos-latest.json
+          git add latest/macos-latest.json latest/last-successful-health.txt
 
           if git diff --cached --quiet; then
+            echo "No repository update is due." >>"$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git commit -m "Update macos-latest manifest"
+          if [[ "$MANIFEST_CHANGED" == "true" || "$INITIALIZE" == "true" ]]; then
+            commit_message="Update macos-latest manifest"
+          else
+            commit_message="Record scheduled runner health check"
+          fi
+
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git commit -m "$commit_message"
           git push
+
+          if [[ "$MANIFEST_CHANGED" != "true" && "$INITIALIZE" != "true" ]]; then
+            echo "Recorded a monthly successful-check timestamp. This is a retention mitigation; GitHub does not guarantee that it resets scheduled-workflow inactivity." >>"$GITHUB_STEP_SUMMARY"
+          fi

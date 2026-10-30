@@ -2,7 +2,7 @@
 
 `latest/macos-latest.json` is a deterministic JSON document with this top-level shape:
 
-The initial schema keeps scope narrow on purpose: it tracks the macOS runner plus the iPhone simulator/runtime environment. That keeps the published manifest useful for the common iOS/macOS build path without widening churn to every Apple platform on day one.
+The manifest tracks the selected macOS runner toolchain, Apple SDKs, and installed simulator runtimes. Simulator device inventories remain available for diagnostics, but device churn does not trigger a release.
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -12,7 +12,7 @@ The initial schema keeps scope narrow on purpose: it tracks the macOS runner plu
 | `system` | object | Host macOS metadata and `uname -srvm` output. |
 | `xcode` | object | Selected Xcode path and `xcodebuild -version` output. |
 | `swift` | object | `swift --version` output and parsed fields when available. |
-| `sdks` | object | Version strings for `iphoneos`, `iphonesimulator`, and `macosx`. |
+| `sdks` | object | Version and build values for `iphoneos`, `iphonesimulator`, and `macosx`. |
 | `simulators` | object | Raw `simctl` JSON for runtimes, device types, and available devices. |
 
 ## `system`
@@ -28,14 +28,10 @@ The initial schema keeps scope narrow on purpose: it tracks the macOS runner plu
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `selected_path` | string | `xcode-select -p` |
+| `selected_path` | string | `xcode-select -p` (diagnostic only; ignored for change alerts) |
 | `xcodebuild_version` | object | Parsed and raw output of `xcodebuild -version` |
 
-`xcodebuild_version` contains:
-
-- `raw`
-- `xcode`
-- `build`
+`xcodebuild_version` contains `raw`, `xcode`, and `build`.
 
 ## `swift`
 
@@ -43,33 +39,22 @@ The initial schema keeps scope narrow on purpose: it tracks the macOS runner plu
 | --- | --- | --- |
 | `swift_version` | object | Parsed and raw output of `swift --version` |
 
-`swift_version` contains:
-
-- `raw`
-- `version`
-- `target`
+`swift_version` contains `raw`, `version`, and `target`. The parser accepts both `Apple Swift version ...` and `Swift version ...` output.
 
 ## `sdks`
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `iphoneos` | string | `xcrun --sdk iphoneos --show-sdk-version` |
-| `iphonesimulator` | string | `xcrun --sdk iphonesimulator --show-sdk-version` |
-| `macosx` | string | `xcrun --sdk macosx --show-sdk-version` |
+Each SDK entry is an object with a `version` string from `xcrun --show-sdk-version` and a `build` value from `ProductBuildVersion` in that SDK's `SDKSettings.plist` (nullable if the setting is absent).
 
-## `simulators`
+Manifest version 2 stores SDK entries as objects. The change detector continues to read version 1 manifests, which stored SDK entries as strings.
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `runtimes` | object | `xcrun simctl list runtimes --json` |
-| `device_types` | object | `xcrun simctl list devicetypes --json` |
-| `devices_available` | object | Stable projection of `xcrun simctl list devices available --json` |
+## Simulator runtimes
 
-## Change comparison
+The release comparison uses each runtime's identifier, version, build version, and availability. It ignores `lastUsage`, bundle paths, devices, and device types. Runtime additions, removals, version/build updates, and availability changes are reported.
 
-`observed_at` is intentionally excluded from change detection.
+## Change comparison and notifications
 
-That means:
+The publisher compares only the fields listed above for alerts. It ignores `observed_at`, selected Xcode paths, host `uname`, device UUID/state changes, and simulator device-type inventory churn. The initial baseline is committed without a release. Unchanged captures are silent.
 
-- the publisher workflow only commits when the environment itself changes
-- downstream repositories can compare manifests semantically without daily churn from timestamps alone
+A change release is created before the latest manifest commit. Its tag includes the current baseline commit and incoming semantic snapshot hash, so a retry of an interrupted publication reuses the same release while a later rollback from a new baseline gets a new tag. GitHub Release notifications require the user to enable Releases in repository watch/custom notification settings.
+
+The separate `latest/last-successful-health.txt` timestamp is excluded from the manifest and comparison. It is updated no more often than every 28 days after a successful check. This may help with scheduled-workflow inactivity, but GitHub does not guarantee that a bot commit resets the inactivity timer. Check the Actions page and re-enable the schedule if GitHub disables it.
