@@ -2,7 +2,7 @@
 
 const REPOSITORY = "mitchins/xcode-runner-watch";
 const RAW_URL = `https://raw.githubusercontent.com/${REPOSITORY}/main/latest/macos-latest.json`;
-const RUNS_URL = `https://api.github.com/repos/${REPOSITORY}/actions/runs?branch=main&per_page=50`;
+const RUNS_URL = "https://api.github.com/repos/mitchins/xcode-runner-watch/actions/workflows/publish-macos-latest.yml/runs?branch=main&event=schedule&status=success&per_page=1";
 const RELEASES_URL = `https://api.github.com/repos/${REPOSITORY}/releases?per_page=20`;
 
 function byId(id) {
