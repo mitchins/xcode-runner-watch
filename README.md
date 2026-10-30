@@ -37,6 +37,12 @@ To receive these alerts through GitHub, enable **Releases** in this repository's
 
 The publisher also records `latest/last-successful-health.txt` at most once every 28 days. This is an inactivity-retention mitigation, not a guarantee: GitHub does not promise that a bot commit resets scheduled-workflow inactivity. If the schedule is disabled, re-enable it on the Actions workflow page.
 
+## Dashboard and JSON feed
+
+The responsive static dashboard is in [`docs/index.html`](docs/index.html). It reads the canonical manifest directly from [`raw.githubusercontent.com/.../main/latest/macos-latest.json`](https://raw.githubusercontent.com/mitchins/xcode-runner-watch/main/latest/macos-latest.json), and separately reads public Actions run history and GitHub Releases for freshness and change history. It has no backend, generated data copy, third-party analytics, or deployment workflow. See [`docs/data-feed.md`](docs/data-feed.md) for mutable and commit-pinned feed URLs and timestamp semantics.
+
+To publish it after merging, open **Settings → Pages → Build and deployment**, choose **Deploy from a branch**, then select branch `main` and folder `/docs`. The repository Pages setting is currently not enabled; this change does not alter repository settings or add deployment permissions. The page fetches the live raw manifest and releases at view time, so nightly manifest commits made with `GITHUB_TOKEN` do not need to trigger a Pages rebuild.
+
 ## Repository automation
 
 The publisher workflow lives at [`.github/workflows/publish-macos-latest.yml`](.github/workflows/publish-macos-latest.yml).
