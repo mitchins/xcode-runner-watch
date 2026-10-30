@@ -145,9 +145,28 @@ def semantic_changes(before: dict[str, Any], after: dict[str, Any]) -> list[dict
     return changes
 
 
-def compare_manifests(baseline_exists: bool, before: dict[str, Any], after: dict[str, Any]) -> tuple[bool, list[dict[str, str]]]:
-    changes = semantic_changes(before, after) if baseline_exists else []
-    return bool(changes), changes
+def needs_baseline_refresh(before: dict[str, Any], after: dict[str, Any]) -> bool:
+    """Quietly persist newly represented fields so later changes are observable."""
+    if after.get("manifest_version", 1) > before.get("manifest_version", 1):
+        return True
+
+    if _value(before, "swift", "swift_version", "version") is None and _value(after, "swift", "swift_version", "version") is not None:
+        return True
+    for sdk in ("iphoneos", "iphonesimulator", "macosx"):
+        if _sdk(before, sdk)[1] is None and _sdk(after, sdk)[1] is not None:
+            return True
+    old_runtimes, new_runtimes = _runtime_map(before), _runtime_map(after)
+    for identifier in old_runtimes.keys() & new_runtimes.keys():
+        if any(old_runtimes[identifier].get(key) is None and new_runtimes[identifier].get(key) is not None for key in ("version", "build", "available")):
+            return True
+    return False
+
+
+def compare_manifests(baseline_exists: bool, before: dict[str, Any], after: dict[str, Any]) -> tuple[bool, bool, list[dict[str, str]]]:
+    if not baseline_exists:
+        return False, False, []
+    changes = semantic_changes(before, after)
+    return bool(changes), needs_baseline_refresh(before, after), changes
 
 
 def semantic_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -165,10 +184,10 @@ def semantic_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def release_tag(base_commit: str, current: dict[str, Any]) -> str:
+def release_tag(baseline_revision: str, current: dict[str, Any]) -> str:
     payload = json.dumps(semantic_manifest(current), sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
-    return f"runner-change-{base_commit[:12]}-{digest}"
+    return f"runner-change-{baseline_revision[:12]}-{digest}"
 
 
 def release_notes(changes: list[dict[str, str]], run_url: str) -> str:
@@ -183,7 +202,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--baseline", type=Path, required=True)
     parser.add_argument("--incoming", type=Path, required=True)
-    parser.add_argument("--base-commit", required=True)
+    parser.add_argument("--baseline-revision", required=True)
     parser.add_argument("--run-url", required=True)
     parser.add_argument("--report-json", type=Path, required=True)
     parser.add_argument("--release-notes", type=Path, required=True)
@@ -193,9 +212,9 @@ def main() -> int:
     current = load(args.incoming)
     baseline_exists = args.baseline.exists()
     baseline = load(args.baseline, require_parsed=False) if baseline_exists else {}
-    changed, changes = compare_manifests(baseline_exists, baseline, current)
-    tag = release_tag(args.base_commit, current) if changed else ""
-    report = {"baseline_exists": baseline_exists, "changed": changed, "release_tag": tag, "changes": changes}
+    changed, refresh_baseline, changes = compare_manifests(baseline_exists, baseline, current)
+    tag = release_tag(args.baseline_revision, current) if changed else ""
+    report = {"baseline_exists": baseline_exists, "changed": changed, "refresh_baseline": refresh_baseline, "release_tag": tag, "changes": changes}
     args.report_json.parent.mkdir(parents=True, exist_ok=True)
     args.report_json.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     args.release_notes.write_text(release_notes(changes, args.run_url) if changed else "", encoding="utf-8")
@@ -204,6 +223,7 @@ def main() -> int:
             output.write(f"baseline_exists={str(baseline_exists).lower()}\n")
             output.write(f"changed={str(changed).lower()}\n")
             output.write(f"initialize={str(not baseline_exists).lower()}\n")
+            output.write(f"refresh_baseline={str(refresh_baseline).lower()}\n")
             output.write(f"release_tag={tag}\n")
     return 0
 

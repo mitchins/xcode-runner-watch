@@ -31,7 +31,7 @@ The change alert focuses on selected Xcode and Swift, macOS version/build, SDK v
 
 ## Change notifications
 
-The publisher creates a GitHub Release only when a meaningful change is detected after a baseline exists. Release notes list each added, removed, or changed value with before/after values and link to the successful capture run. The first baseline and unchanged runs do not create releases. The release is published before the manifest commit; retry-safe tags let a later run finish a failed commit without creating a duplicate release. A later transition back to an earlier SDK/runtime state uses a new baseline commit in its tag and creates a new release.
+The publisher creates a GitHub Release only when a meaningful change is detected after a baseline exists. Release notes list each added, removed, or changed value with before/after values and link to the successful capture run. The first baseline and unchanged runs do not create releases. The release is published before the manifest commit; retry-safe tags use the persisted baseline manifest revision, so unrelated repository commits cannot cause duplicate releases after a failed manifest commit. A later transition back to an earlier SDK/runtime state uses its own baseline revision and creates a new release. Older manifests are quietly refreshed when newly captured fields become available, so future changes to those fields are detectable.
 
 To receive these alerts through GitHub, enable **Releases** in this repository's watch/custom notification settings. This repository does not configure your personal notification subscriptions. Workflow failures continue to use GitHub Actions failure notifications.
 

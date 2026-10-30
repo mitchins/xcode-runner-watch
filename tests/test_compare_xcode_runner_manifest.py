@@ -74,16 +74,38 @@ class ManifestComparisonTests(unittest.TestCase):
         self.assertEqual("26.1", macos_sdk["after"])
 
     def test_first_baseline_has_no_change(self):
-        changed, changes = compare.compare_manifests(False, {}, manifest())
+        changed, refreshed, changes = compare.compare_manifests(False, {}, manifest())
         self.assertFalse(changed)
+        self.assertFalse(refreshed)
         self.assertEqual([], changes)
 
     def test_newly_parsed_swift_and_sdk_build_values_seed_without_alert(self):
         before, after = manifest(), manifest()
+        before["manifest_version"] = 1
         before["swift"]["swift_version"]["version"] = None
-        before["sdks"]["iphoneos"]["build"] = None
+        before["sdks"] = {key: value["version"] for key, value in before["sdks"].items()}
         after["swift"]["swift_version"]["version"] = "6.2 (swiftlang-abc)"
-        self.assertEqual([], compare.semantic_changes(before, after))
+        changed, refreshed, changes = compare.compare_manifests(True, before, after)
+        self.assertFalse(changed)
+        self.assertTrue(refreshed)
+        self.assertEqual([], changes)
+
+        # Once the enriched snapshot is persisted, a later SDK-build-only or
+        # Swift-only transition is compared exactly once against that baseline.
+        persisted = copy.deepcopy(after)
+        sdk_update = copy.deepcopy(persisted)
+        sdk_update["sdks"]["iphoneos"]["build"] = "23A2"
+        changed, _, changes = compare.compare_manifests(True, persisted, sdk_update)
+        self.assertTrue(changed)
+        self.assertEqual(["iphoneos SDK build"], [change["label"] for change in changes])
+        self.assertFalse(compare.compare_manifests(True, sdk_update, sdk_update)[0])
+
+        swift_update = copy.deepcopy(persisted)
+        swift_update["swift"]["swift_version"]["version"] = "6.3 (swiftlang-new)"
+        changed, _, changes = compare.compare_manifests(True, persisted, swift_update)
+        self.assertTrue(changed)
+        self.assertEqual(["Swift"], [change["label"] for change in changes])
+        self.assertFalse(compare.compare_manifests(True, swift_update, swift_update)[0])
 
     def test_invalid_capture_refuses_to_report_all_runtimes_removed(self):
         broken = manifest()
@@ -91,10 +113,16 @@ class ManifestComparisonTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "refusing to report removals"):
             compare.validate_manifest(broken, "incoming")
 
-    def test_release_key_is_stable_for_retry_and_new_for_rollback_base(self):
+    def test_release_key_uses_persisted_baseline_revision_for_retry(self):
         current = manifest()
-        self.assertEqual(compare.release_tag("a" * 40, current), compare.release_tag("a" * 40, copy.deepcopy(current)))
-        self.assertNotEqual(compare.release_tag("a" * 40, current), compare.release_tag("b" * 40, current))
+        initial_baseline_blob = "a" * 40
+        # An unrelated README commit changes HEAD but leaves this manifest blob
+        # untouched, so retrying after failed persistence reuses the release.
+        first_attempt = compare.release_tag(initial_baseline_blob, current)
+        unrelated_repository_head = "b" * 40
+        retry = compare.release_tag(initial_baseline_blob, copy.deepcopy(current))
+        self.assertNotEqual(initial_baseline_blob, unrelated_repository_head)
+        self.assertEqual(first_attempt, retry)
 
     def test_rollback_to_prior_sdk_state_has_a_distinct_release_key(self):
         original = manifest()
@@ -115,6 +143,21 @@ class ManifestComparisonTests(unittest.TestCase):
         result = capture_swift_version("Apple Swift version 6.2 (swiftlang-abc)\nTarget: arm64-apple-macosx26.0")
         self.assertEqual("6.2 (swiftlang-abc)", result["version"])
         self.assertEqual("arm64-apple-macosx26.0", result["target"])
+
+    def test_parses_repository_swift_driver_prefixed_output(self):
+        raw = (
+            "swift-driver version: 1.148.6 Apple Swift version 6.3.3 "
+            "(swiftlang-6.3.3.1.3 clang-2100.1.1.101)\n"
+            "Target: arm64-apple-macosx26.0"
+        )
+        result = capture_swift_version(raw)
+        self.assertEqual("6.3.3 (swiftlang-6.3.3.1.3 clang-2100.1.1.101)", result["version"])
+        self.assertEqual("arm64-apple-macosx26.0", result["target"])
+
+    def test_parses_legacy_swift_version_output(self):
+        result = capture_swift_version("Swift version 5.9.2\nTarget: x86_64-apple-macosx14.0")
+        self.assertEqual("5.9.2", result["version"])
+        self.assertEqual("x86_64-apple-macosx14.0", result["target"])
 
 
 if __name__ == "__main__":

@@ -18,8 +18,9 @@ def capture_xcode_version(raw: str) -> dict[str, Any]:
 
 def capture_swift_version(raw: str) -> dict[str, Any]:
     # `swift --version` on current Apple toolchains starts with
-    # "Apple Swift version", while some older versions omit "Apple".
-    version_match = re.search(r"^(?:Apple\s+)?Swift version\s+(.+)$", raw, re.MULTILINE)
+    # "Apple Swift version". Recent toolchains may prefix it with the
+    # swift-driver version on the same line; older output may omit "Apple".
+    version_match = re.search(r"(?:^|[ \t])(?:Apple[ \t]+)?Swift[ \t]+version[ \t]+([^\r\n]+)", raw, re.MULTILINE)
     target_match = re.search(r"^Target:\s+(.+)$", raw, re.MULTILINE)
     return {
         "raw": raw,

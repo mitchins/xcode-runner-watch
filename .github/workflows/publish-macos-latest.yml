@@ -33,12 +33,16 @@ jobs:
           temp_manifest="$RUNNER_TEMP/macos-latest.json"
           report_json="$RUNNER_TEMP/runner-changes.json"
           release_notes="$RUNNER_TEMP/release-notes.md"
+          baseline_revision="$(git rev-parse HEAD:latest/macos-latest.json 2>/dev/null || true)"
+          if [[ -z "$baseline_revision" ]]; then
+            baseline_revision="initial-baseline"
+          fi
           RUNNER_LABEL="macos-latest" ./scripts/capture-xcode-runner-manifest.sh "$temp_manifest"
 
           python3 scripts/compare_xcode_runner_manifest.py \
             --baseline latest/macos-latest.json \
             --incoming "$temp_manifest" \
-            --base-commit "$GITHUB_SHA" \
+            --baseline-revision "$baseline_revision" \
             --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --report-json "$report_json" \
             --release-notes "$release_notes" \
@@ -51,6 +55,8 @@ jobs:
             cat "$release_notes" >>"$GITHUB_STEP_SUMMARY"
           elif [[ "$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["baseline_exists"]).lower())' "$report_json")" == "false" ]]; then
             echo "Saved the initial macos-latest baseline. No change release is created for the first snapshot." >>"$GITHUB_STEP_SUMMARY"
+          elif [[ "$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["refresh_baseline"]).lower())' "$report_json")" == "true" ]]; then
+            echo "Refreshed the manifest baseline with newly captured fields. No environment change release is created for this migration." >>"$GITHUB_STEP_SUMMARY"
           else
             echo "No meaningful Xcode, SDK, macOS, Swift, or simulator runtime changes." >>"$GITHUB_STEP_SUMMARY"
           fi
@@ -78,11 +84,12 @@ jobs:
         env:
           MANIFEST_CHANGED: ${{ steps.capture.outputs.changed }}
           INITIALIZE: ${{ steps.capture.outputs.initialize }}
+          BASELINE_REFRESH: ${{ steps.capture.outputs.refresh_baseline }}
           MANIFEST_PATH: ${{ steps.capture.outputs.manifest_path }}
         run: |
           set -euo pipefail
 
-          if [[ "$MANIFEST_CHANGED" == "true" || "$INITIALIZE" == "true" ]]; then
+          if [[ "$MANIFEST_CHANGED" == "true" || "$INITIALIZE" == "true" || "$BASELINE_REFRESH" == "true" ]]; then
             mkdir -p latest
             cp "$MANIFEST_PATH" latest/macos-latest.json
           fi
@@ -114,6 +121,8 @@ jobs:
 
           if [[ "$MANIFEST_CHANGED" == "true" || "$INITIALIZE" == "true" ]]; then
             commit_message="Update macos-latest manifest"
+          elif [[ "$BASELINE_REFRESH" == "true" ]]; then
+            commit_message="Refresh macos-latest baseline metadata"
           else
             commit_message="Record scheduled runner health check"
           fi
