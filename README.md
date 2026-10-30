@@ -6,8 +6,8 @@ The repository is meant for app and SDK teams that want an auditable baseline fo
 
 - selected Xcode
 - Swift toolchain version
-- Apple SDK versions
-- simulator runtimes, device types, and available devices
+- Apple SDK versions and SDK build IDs
+- installed simulator runtimes, versions, builds, and availability
 
 After the first successful run, the latest manifest is published at:
 
@@ -22,14 +22,26 @@ The manifest includes:
 - macOS product and build version plus `uname`
 - selected Xcode path and `xcodebuild -version`
 - `swift --version`
-- SDK versions for `iphoneos`, `iphonesimulator`, and `macosx`
-- `simctl` JSON for runtimes, device types, and a stable available-devices projection
+- SDK versions and build IDs for `iphoneos`, `iphonesimulator`, and `macosx`
+- `simctl` JSON for runtimes, device types, and available devices
 
-The JSON is rendered deterministically. `observed_at` is included for traceability, but repository updates only happen when the meaningful environment data changes.
+The JSON is rendered deterministically. `observed_at` is included for traceability, but repository updates only happen when meaningful environment data changes, except for a separate monthly successful-check timestamp.
 
-v1 intentionally focuses on the macOS runner and the iPhone simulator/runtime surface that most app teams consume day to day. watchOS, tvOS, and visionOS can be added later if this repo grows into a broader Apple-platform tracker.
+The change alert focuses on selected Xcode and Swift, macOS version/build, SDK version/build, and simulator runtime identifier/version/build/availability. It ignores temporary Xcode paths, host `uname`, device UUID/state churn, device-type inventory changes, runtime paths, and observation timestamps.
 
-See [`docs/manifest-schema.md`](docs/manifest-schema.md) for the field-level schema.
+## Change notifications
+
+The publisher creates a GitHub Release only when a meaningful change is detected after a baseline exists. Release notes list each added, removed, or changed value with before/after values and link to the successful capture run. The first baseline and unchanged runs do not create releases. The release is published before the manifest commit; retry-safe tags use the persisted baseline manifest revision, so unrelated repository commits cannot cause duplicate releases after a failed manifest commit. A later transition back to an earlier SDK/runtime state uses its own baseline revision and creates a new release. Older manifests are quietly refreshed when newly captured fields become available, so future changes to those fields are detectable.
+
+To receive these alerts through GitHub, enable **Releases** in this repository's watch/custom notification settings. This repository does not configure your personal notification subscriptions. Workflow failures continue to use GitHub Actions failure notifications.
+
+The publisher also records `latest/last-successful-health.txt` at most once every 28 days. This is an inactivity-retention mitigation, not a guarantee: GitHub does not promise that a bot commit resets scheduled-workflow inactivity. If the schedule is disabled, re-enable it on the Actions workflow page.
+
+## Dashboard and JSON feed
+
+The responsive static dashboard is in [`docs/index.html`](docs/index.html). It reads the canonical manifest directly from [`raw.githubusercontent.com/.../main/latest/macos-latest.json`](https://raw.githubusercontent.com/mitchins/xcode-runner-watch/main/latest/macos-latest.json), and separately reads public Actions run history and GitHub Releases for freshness and change history. It has no backend, generated data copy, third-party analytics, or deployment workflow. See [`docs/data-feed.md`](docs/data-feed.md) for mutable and commit-pinned feed URLs and timestamp semantics.
+
+To publish it after merging, open **Settings → Pages → Build and deployment**, choose **Deploy from a branch**, then select branch `main` and folder `/docs`. The repository Pages setting is currently not enabled; this change does not alter repository settings or add deployment permissions. The page fetches the live raw manifest and releases at view time, so nightly manifest commits made with `GITHUB_TOKEN` do not need to trigger a Pages rebuild.
 
 ## Repository automation
 
@@ -39,8 +51,11 @@ It:
 
 1. runs nightly and on `workflow_dispatch`
 2. captures the runner state with [`scripts/capture-xcode-runner-manifest.sh`](scripts/capture-xcode-runner-manifest.sh)
-3. compares the new manifest with the committed one while ignoring `observed_at`
-4. commits `latest/macos-latest.json` only when a meaningful change is detected
+3. compares normalized toolchain, SDK, and runtime values with [`scripts/compare_xcode_runner_manifest.py`](scripts/compare_xcode_runner_manifest.py)
+4. publishes a release for meaningful changes, then commits the manifest
+5. records a separate monthly health timestamp
+
+Pull requests run the manifest comparison unit tests via [`.github/workflows/test.yml`](.github/workflows/test.yml).
 
 ## Downstream usage
 

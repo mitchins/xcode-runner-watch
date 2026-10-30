@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src https://raw.githubusercontent.com https://api.github.com; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <meta name="description" content="Current Xcode, SDK, and simulator runtime versions on GitHub Actions macos-latest.">
+    <title>Xcode Runner Watch</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <noscript><p class="page-status is-warning">This dashboard needs JavaScript to fetch the public manifest and GitHub run history. The <a href="https://raw.githubusercontent.com/mitchins/xcode-runner-watch/main/latest/macos-latest.json">raw JSON feed</a> is available directly.</p></noscript>
+    <main class="page-shell">
+      <header class="site-header">
+        <a class="brand" href="./" aria-label="Xcode Runner Watch home">
+          <span class="brand-mark" aria-hidden="true">XR</span>
+          <span>Xcode Runner Watch</span>
+        </a>
+        <nav class="header-links" aria-label="Project links">
+          <a class="quiet-link" href="https://github.com/mitchins/xcode-runner-watch/actions/workflows/publish-macos-latest.yml">Workflow</a>
+          <a class="quiet-link" href="https://github.com/mitchins/xcode-runner-watch/releases">Change history</a>
+          <a class="button button-small" href="https://raw.githubusercontent.com/mitchins/xcode-runner-watch/main/latest/macos-latest.json">Raw JSON <span aria-hidden="true">↗</span></a>
+        </nav>
+      </header>
+
+      <section class="intro" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow"><span class="live-dot" aria-hidden="true"></span> PUBLIC RUNNER SNAPSHOT</p>
+          <h1 id="page-title">What’s on <span>macos-latest</span> right now?</h1>
+          <p class="intro-copy">A readable view of the Xcode, Apple SDKs, and simulator runtimes available to GitHub Actions builds.</p>
+        </div>
+        <div class="intro-actions">
+          <button class="button button-secondary" id="refresh-button" type="button">Refresh data <span aria-hidden="true">↻</span></button>
+        </div>
+      </section>
+
+      <div class="page-status" id="page-status" role="status" aria-live="polite">Loading the latest published snapshot…</div>
+
+      <section class="freshness-grid" aria-label="Snapshot and check times">
+        <article class="freshness-card freshness-primary">
+          <div class="card-icon" aria-hidden="true">✓</div>
+          <div>
+            <p class="card-label">Latest successful scheduled check</p>
+            <p class="freshness-value" id="last-check-value">Checking GitHub Actions…</p>
+            <a class="inline-link" id="last-check-link" hidden>Open workflow run <span aria-hidden="true">↗</span></a>
+            <p class="card-footnote" id="last-check-note">This is read from the public workflow run history.</p>
+          </div>
+        </article>
+        <article class="freshness-card">
+          <div class="card-icon card-icon-muted" aria-hidden="true">◷</div>
+          <div>
+            <p class="card-label">Snapshot captured</p>
+            <p class="freshness-value" id="snapshot-value">Waiting for manifest…</p>
+            <p class="card-footnote">This time changes with the published manifest; it is not the latest successful check time.</p>
+          </div>
+        </article>
+      </section>
+
+      <section class="section-block" aria-labelledby="toolchain-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">SELECTED TOOLCHAIN</p>
+            <h2 id="toolchain-title">Build environment</h2>
+          </div>
+          <span class="section-meta" id="runner-label">Runner label pending</span>
+        </div>
+        <div class="toolchain-grid" id="toolchain-cards">
+          <article class="tool-card loading-card"><p class="card-label">Xcode</p><p class="tool-version">Loading…</p></article>
+          <article class="tool-card loading-card"><p class="card-label">Swift</p><p class="tool-version">Loading…</p></article>
+          <article class="tool-card loading-card"><p class="card-label">macOS</p><p class="tool-version">Loading…</p></article>
+        </div>
+      </section>
+
+      <section class="section-block" aria-labelledby="sdk-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">APPLE SDKs</p>
+            <h2 id="sdk-title">SDK versions</h2>
+          </div>
+          <span class="section-meta">Version and build ID</span>
+        </div>
+        <div class="sdk-grid" id="sdk-cards">
+          <article class="sdk-card loading-card"><p class="card-label">iOS device</p><p class="tool-version">Loading…</p></article>
+          <article class="sdk-card loading-card"><p class="card-label">iOS simulator</p><p class="tool-version">Loading…</p></article>
+          <article class="sdk-card loading-card"><p class="card-label">macOS</p><p class="tool-version">Loading…</p></article>
+        </div>
+      </section>
+
+      <section class="section-block" aria-labelledby="runtime-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">SIMULATOR RUNTIMES</p>
+            <h2 id="runtime-title">Installed runtimes</h2>
+          </div>
+          <span class="section-meta" id="runtime-count">Waiting for manifest…</span>
+        </div>
+        <div class="runtime-list" id="runtime-list" aria-live="polite">
+          <p class="empty-state">Loading simulator runtimes…</p>
+        </div>
+      </section>
+
+      <section class="section-block history-block" aria-labelledby="history-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">MEANINGFUL CHANGES</p>
+            <h2 id="history-title">Change history</h2>
+          </div>
+          <a class="quiet-link" href="https://github.com/mitchins/xcode-runner-watch/releases">All releases <span aria-hidden="true">↗</span></a>
+        </div>
+        <p class="section-description">Only changes to the selected toolchain, SDKs, or simulator runtimes appear here. Each entry links to the capture run and records the before and after values.</p>
+        <div class="history-list" id="history-list" aria-live="polite">
+          <p class="empty-state">Loading change history…</p>
+        </div>
+      </section>
+
+      <section class="feed-note" aria-labelledby="feed-title">
+        <div>
+          <p class="eyebrow">MACHINE-READABLE FEED</p>
+          <h2 id="feed-title">Use the JSON directly</h2>
+          <p>The mutable main-branch feed is the canonical snapshot used by this page. Pin a commit SHA when you need a reproducible input.</p>
+          <code class="feed-url">https://raw.githubusercontent.com/mitchins/xcode-runner-watch/main/latest/macos-latest.json</code>
+          <code class="feed-url feed-url-muted">https://raw.githubusercontent.com/mitchins/xcode-runner-watch/&lt;commit-sha&gt;/latest/macos-latest.json</code>
+          <p class="feed-footnote">The main URL may be briefly cached. A commit-pinned URL is immutable. Details: <a href="https://github.com/mitchins/xcode-runner-watch/blob/main/docs/data-feed.md">feed and freshness notes</a>.</p>
+        </div>
+        <a class="button button-secondary feed-button" href="https://raw.githubusercontent.com/mitchins/xcode-runner-watch/main/latest/macos-latest.json">Open JSON feed <span aria-hidden="true">↗</span></a>
+      </section>
+
+      <footer class="site-footer">
+        <span>Data from GitHub Actions <code>macos-latest</code></span>
+        <span><a href="https://github.com/mitchins/xcode-runner-watch">Source repository</a><span class="footer-separator">·</span><a href="https://github.com/mitchins/xcode-runner-watch/blob/main/docs/manifest-schema.md">Manifest schema</a></span>
+      </footer>
+    </main>
+  </body>
+</html>
