@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "observed_at": "2026-11-12T04:32:11Z",
+  "observed_at": "2026-11-12T04:33:03Z",
   "runner_label": "macos-latest",
   "sdks": {
     "iphoneos": "26.5",
