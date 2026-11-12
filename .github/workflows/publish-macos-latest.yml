@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: publish-macos-latest
@@ -14,6 +15,7 @@ concurrency:
 
 jobs:
   publish:
+    if: github.ref == 'refs/heads/main'
     runs-on: macos-latest
     env:
       GITHUB_TOKEN: ${{ github.token }}
@@ -21,7 +23,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
-          ref: ${{ github.ref_name }}
+          ref: main
           persist-credentials: false
 
       - name: Capture manifest
@@ -81,7 +83,7 @@ jobs:
           mv "$temp_manifest" latest/macos-latest.json
           echo "changed=true" >>"$GITHUB_OUTPUT"
 
-      - name: Commit manifest
+      - name: Publish manifest through a pull request
         if: steps.capture.outputs.changed == 'true'
         shell: bash
         run: |
@@ -96,6 +98,20 @@ jobs:
             exit 0
           fi
 
-          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          python3 scripts/validate_manifest_publication.py latest/macos-latest.json
+          branch="bot/macos-latest-manifest"
+          git checkout -B "$branch"
           git commit -m "Update macos-latest manifest"
-          git push
+          gh auth setup-git
+          git push --force-with-lease origin "HEAD:refs/heads/$branch"
+          head="$(git rev-parse HEAD)"
+          pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --base main --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          if [[ -z "$pr" ]]; then
+            pr="$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
+              --title "Update macos-latest manifest" \
+              --body "Automated runner capture. Only latest/macos-latest.json may change.")"
+            pr="${pr##*/}"
+          fi
+          python3 scripts/validate_manifest_publication.py latest/macos-latest.json "$pr" "$head"
+          gh api --method PUT "repos/$GITHUB_REPOSITORY/pulls/$pr/merge" \
+            -f sha="$head" -f merge_method=squash --jq 'if .merged then .sha else error(.message) end'
