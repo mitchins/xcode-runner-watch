@@ -40,7 +40,10 @@ It:
 1. runs nightly and on `workflow_dispatch`
 2. captures the runner state with [`scripts/capture-xcode-runner-manifest.sh`](scripts/capture-xcode-runner-manifest.sh)
 3. compares the new manifest with the committed one while ignoring `observed_at`
-4. commits `latest/macos-latest.json` only when a meaningful change is detected
+4. commits only meaningful changes to the dedicated `bot/macos-latest-manifest` branch
+5. opens or updates a manifest-only PR, validates its schema, paths, identity, and exact head, then squash merges through normal branch rules
+
+The repository Actions setting **Allow GitHub Actions to create and approve pull requests** must be enabled. The workflow requests `contents: write` and `pull-requests: write`; it does not approve reviews or bypass rules. Unchanged captures create no commit or PR. Manual runs publish only from `main`.
 
 ## Downstream usage
 
