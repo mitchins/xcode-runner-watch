@@ -52,8 +52,10 @@ It:
 1. runs nightly and on `workflow_dispatch`
 2. captures the runner state with [`scripts/capture-xcode-runner-manifest.sh`](scripts/capture-xcode-runner-manifest.sh)
 3. compares normalized toolchain, SDK, and runtime values with [`scripts/compare_xcode_runner_manifest.py`](scripts/compare_xcode_runner_manifest.py)
-4. publishes a release for meaningful changes, then commits the manifest
-5. records a separate monthly health timestamp
+4. publishes a release for meaningful changes, then publishes the manifest through a validated manifest-only PR
+5. records a separate monthly health timestamp through its own validated health-only PR
+
+Publication uses dedicated `bot/macos-latest-manifest` and `bot/macos-latest-health` branches and exact-head squash merges through normal branch rules. The repository Actions setting **Allow GitHub Actions to create and approve pull requests** must be enabled. The workflow requests `contents: write` and `pull-requests: write`; it does not approve reviews or bypass rules. Manual runs publish only from `main`. Each PR is restricted to its one expected path; the health timestamp cannot share the manifest PR.
 
 Pull requests run the manifest comparison unit tests via [`.github/workflows/test.yml`](.github/workflows/test.yml).
 
