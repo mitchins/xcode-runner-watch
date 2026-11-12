@@ -33,9 +33,12 @@ trap 'rm -rf "$workdir"' EXIT
 
 xcodebuild -version >"$workdir/xcodebuild-version.txt" 2>&1
 swift --version >"$workdir/swift-version.txt" 2>&1
-xcrun --sdk iphoneos --show-sdk-version >"$workdir/sdk-iphoneos.txt"
-xcrun --sdk iphonesimulator --show-sdk-version >"$workdir/sdk-iphonesimulator.txt"
-xcrun --sdk macosx --show-sdk-version >"$workdir/sdk-macosx.txt"
+
+for sdk in iphoneos iphonesimulator macosx; do
+  xcrun --sdk "$sdk" --show-sdk-version >"$workdir/sdk-$sdk-version.txt"
+  xcrun --sdk "$sdk" --show-sdk-path >"$workdir/sdk-$sdk-path.txt"
+done
+
 xcrun simctl list runtimes --json >"$workdir/simctl-runtimes.json"
 xcrun simctl list devicetypes --json >"$workdir/simctl-devicetypes.json"
 xcrun simctl list devices available --json >"$workdir/simctl-devices-available.json"
@@ -48,12 +51,15 @@ UNAME_OUTPUT="$(uname -srvm)" \
 MACOS_PRODUCT_NAME="$(sw_vers -productName)" \
 MACOS_PRODUCT_VERSION="$(sw_vers -productVersion)" \
 MACOS_BUILD_VERSION="$(sw_vers -buildVersion)" \
+PYTHONPATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" \
 python3 - <<'PY'
 import json
 import os
-import re
+import plistlib
 from datetime import datetime, timezone
 from pathlib import Path
+
+from manifest_fields import capture_swift_version, capture_xcode_version
 
 
 def read_text(path: Path) -> str:
@@ -69,31 +75,16 @@ def canonical(value):
         return {key: canonical(value[key]) for key in sorted(value)}
     if isinstance(value, list):
         items = [canonical(item) for item in value]
-        return sorted(
-            items,
-            key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")),
-        )
+        return sorted(items, key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")))
     return value
 
 
-def capture_xcode_version(raw: str) -> dict:
-    xcode_match = re.search(r"^Xcode\s+(.+)$", raw, re.MULTILINE)
-    build_match = re.search(r"^Build version\s+(.+)$", raw, re.MULTILINE)
-    return {
-        "raw": raw,
-        "xcode": xcode_match.group(1) if xcode_match else None,
-        "build": build_match.group(1) if build_match else None,
-    }
-
-
-def capture_swift_version(raw: str) -> dict:
-    version_match = re.search(r"^Swift version\s+(.+)$", raw, re.MULTILINE)
-    target_match = re.search(r"^Target:\s+(.+)$", raw, re.MULTILINE)
-    return {
-        "raw": raw,
-        "version": version_match.group(1) if version_match else None,
-        "target": target_match.group(1) if target_match else None,
-    }
+def sdk_build(path: Path):
+    settings = path / "SDKSettings.plist"
+    if not settings.is_file():
+        return None
+    with settings.open("rb") as source:
+        return plistlib.load(source).get("ProductBuildVersion")
 
 
 workdir = Path(os.environ["WORKDIR"])
@@ -111,9 +102,17 @@ sanitized_devices = {
     for runtime, devices in sorted(devices_available.get("devices", {}).items())
 }
 
+sdks = {}
+for sdk in ("iphoneos", "iphonesimulator", "macosx"):
+    sdk_path = Path(read_text(workdir / f"sdk-{sdk}-path.txt"))
+    sdks[sdk] = {
+        "version": read_text(workdir / f"sdk-{sdk}-version.txt"),
+        "build": sdk_build(sdk_path),
+    }
+
 manifest = canonical(
     {
-        "manifest_version": 1,
+        "manifest_version": 2,
         "observed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "runner_label": os.environ["RUNNER_LABEL"],
         "system": {
@@ -124,20 +123,12 @@ manifest = canonical(
         },
         "xcode": {
             "selected_path": os.environ["SELECTED_XCODE_PATH"],
-            "xcodebuild_version": capture_xcode_version(
-                read_text(workdir / "xcodebuild-version.txt")
-            ),
+            "xcodebuild_version": capture_xcode_version(read_text(workdir / "xcodebuild-version.txt")),
         },
         "swift": {
-            "swift_version": capture_swift_version(
-                read_text(workdir / "swift-version.txt")
-            ),
+            "swift_version": capture_swift_version(read_text(workdir / "swift-version.txt")),
         },
-        "sdks": {
-            "iphoneos": read_text(workdir / "sdk-iphoneos.txt"),
-            "iphonesimulator": read_text(workdir / "sdk-iphonesimulator.txt"),
-            "macosx": read_text(workdir / "sdk-macosx.txt"),
-        },
+        "sdks": sdks,
         "simulators": {
             "runtimes": read_json(workdir / "simctl-runtimes.json"),
             "device_types": read_json(workdir / "simctl-devicetypes.json"),
@@ -147,8 +138,5 @@ manifest = canonical(
 )
 
 output_path.parent.mkdir(parents=True, exist_ok=True)
-output_path.write_text(
-    json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-    encoding="utf-8",
-)
+output_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
