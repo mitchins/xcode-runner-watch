@@ -55,7 +55,7 @@ It:
 4. publishes a release for meaningful changes, then publishes the manifest through a validated manifest-only PR
 5. records a separate monthly health timestamp through its own validated health-only PR
 
-Publication uses dedicated `bot/macos-latest-manifest` and `bot/macos-latest-health` branches and exact-head squash merges through normal branch rules. The repository Actions setting **Allow GitHub Actions to create and approve pull requests** must be enabled. The workflow requests `contents: write` and `pull-requests: write`; it does not approve reviews or bypass rules. Manual runs publish only from `main`. Each PR is restricted to its one expected path; the health timestamp cannot share the manifest PR.
+Publication uses dedicated `bot/macos-latest-manifest` and `bot/macos-latest-health` branches and exact-head squash merges through normal branch rules. The repository Actions setting **Allow GitHub Actions to create and approve pull requests** must be enabled. The workflow requests `contents: write` and `pull-requests: write`; it does not approve reviews or bypass rules. Manual runs publish only from `main`. The optional `verify_publication` dispatch input republishes a fresh real capture to verify publication, without creating a release unless tracked environment values changed; it defaults to false. Publication stops if main advances before PR validation, so the next run can recapture against the new baseline. Each PR is restricted to its one expected path; the health timestamp cannot share the manifest PR.
 
 Pull requests run the manifest comparison unit tests via [`.github/workflows/test.yml`](.github/workflows/test.yml).
 

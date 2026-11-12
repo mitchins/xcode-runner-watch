@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "17 2 * * *"
   workflow_dispatch:
+    inputs:
+      verify_publication:
+        description: "Verify the bot PR and squash path by publishing a fresh real capture, even if only observed_at changes"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -19,6 +24,7 @@ jobs:
     runs-on: macos-latest
     env:
       GH_TOKEN: ${{ github.token }}
+      VERIFY_PUBLICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_publication }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -91,7 +97,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ "$MANIFEST_CHANGED" == "true" || "$INITIALIZE" == "true" || "$BASELINE_REFRESH" == "true" ]]; then
+          if [[ "$MANIFEST_CHANGED" == "true" || "$INITIALIZE" == "true" || "$BASELINE_REFRESH" == "true" || "$VERIFY_PUBLICATION" == "true" ]]; then
             mkdir -p latest
             cp "$MANIFEST_PATH" latest/macos-latest.json
           fi
@@ -111,6 +117,10 @@ jobs:
           if due:
               path.write_text(today.isoformat() + "\n", encoding="utf-8")
           PY
+
+          if [[ "$VERIFY_PUBLICATION" == "true" ]]; then
+            echo "Manual publication verification: publishing a fresh real capture, including its observation timestamp. This does not create a release unless environment values changed." >>"$GITHUB_STEP_SUMMARY"
+          fi
 
           # Each helper stages and validates exactly one allowlisted path.
           bash scripts/publish_runner_update.sh manifest
