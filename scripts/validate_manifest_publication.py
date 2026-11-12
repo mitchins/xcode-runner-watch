@@ -39,12 +39,13 @@ def validate_manifest(value):
             fields(device, dict(name=(str, type(None)), deviceTypeIdentifier=(str, type(None)), isAvailable=(bool, type(None))))
 
 
-def validate_pr(pr, files, repo, head):
+def validate_pr(pr, files, repo, head, base=None):
     if (pr['state'] != 'open' or pr['draft'] or pr['base']['ref'] != 'main'
             or pr['base']['repo']['full_name'] != repo
             or pr['head']['ref'] != 'bot/macos-latest-manifest'
             or pr['head']['repo']['full_name'] != repo or pr['head']['sha'] != head
-            or pr['user']['login'] != 'github-actions[bot]' or pr['changed_files'] != 1):
+            or pr['user']['login'] != 'github-actions[bot]' or pr['changed_files'] != 1
+            or (base is not None and pr['base']['sha'] != base)):
         raise ValueError('Unexpected publication PR identity or head')
     if len(files) != 1 or files[0]['filename'] != 'latest/macos-latest.json' or files[0]['status'] != 'modified':
         raise ValueError('Publication must modify only the manifest')
@@ -55,13 +56,14 @@ def main():
     validate_manifest(json.loads(path.read_text()))
     if len(sys.argv) == 2:
         return
-    pr_number, head = sys.argv[2:]
+    pr_number, head = sys.argv[2:4]
+    base = sys.argv[4] if len(sys.argv) > 4 else None
     repo = os.environ['GITHUB_REPOSITORY']
 
     def api(endpoint):
         return json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/{endpoint}']))
 
-    validate_pr(api(f'pulls/{pr_number}'), api(f'pulls/{pr_number}/files?per_page=100'), repo, head)
+    validate_pr(api(f'pulls/{pr_number}'), api(f'pulls/{pr_number}/files?per_page=100'), repo, head, base)
     committed = subprocess.check_output(['git', 'show', f'{head}:latest/macos-latest.json'])
     if committed != path.read_bytes():
         raise ValueError('PR manifest differs from validated capture')

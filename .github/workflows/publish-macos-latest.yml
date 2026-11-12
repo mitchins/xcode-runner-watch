@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "17 2 * * *"
   workflow_dispatch:
+    inputs:
+      verify_publication:
+        description: "Verify the bot PR and squash path by publishing a fresh real capture, even if only observed_at changes"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -28,6 +33,8 @@ jobs:
 
       - name: Capture manifest
         id: capture
+        env:
+          VERIFY_PUBLICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_publication }}
         shell: bash
         run: |
           set -euo pipefail
@@ -35,7 +42,11 @@ jobs:
           temp_manifest="$(mktemp)"
           RUNNER_LABEL="macos-latest" ./scripts/capture-xcode-runner-manifest.sh "$temp_manifest"
 
-          if [[ -f latest/macos-latest.json ]]; then
+          if [[ "${VERIFY_PUBLICATION:-false}" == "true" ]]; then
+            echo "Manual publication verification: publishing a fresh real capture, including its observation timestamp." >>"$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [[ -f latest/macos-latest.json && "${VERIFY_PUBLICATION:-false}" != "true" ]]; then
             set +e
             python3 - "$temp_manifest" latest/macos-latest.json <<'PY'
           import json
@@ -105,6 +116,7 @@ jobs:
           gh auth setup-git
           git push --force-with-lease origin "HEAD:refs/heads/$branch"
           head="$(git rev-parse HEAD)"
+          base="$(git rev-parse HEAD^)"
           pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --base main --head "$branch" --state open --json number --jq '.[0].number // empty')"
           if [[ -z "$pr" ]]; then
             pr="$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
@@ -112,6 +124,6 @@ jobs:
               --body "Automated runner capture. Only latest/macos-latest.json may change.")"
             pr="${pr##*/}"
           fi
-          python3 scripts/validate_manifest_publication.py latest/macos-latest.json "$pr" "$head"
+          python3 scripts/validate_manifest_publication.py latest/macos-latest.json "$pr" "$head" "$base"
           gh api --method PUT "repos/$GITHUB_REPOSITORY/pulls/$pr/merge" \
             -f sha="$head" -f merge_method=squash --jq 'if .merged then .sha else error(.message) end'
