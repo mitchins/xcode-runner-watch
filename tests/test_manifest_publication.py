@@ -23,11 +23,13 @@ class PublicationTests(unittest.TestCase):
 
     def test_pr_guard(self):
         repo = {'full_name': 'mitchins/xcode-runner-watch'}
-        pr = dict(state='open', draft=False, base=dict(ref='main', repo=repo),
+        pr = dict(state='open', draft=False, base=dict(ref='main', sha='base', repo=repo),
                   head=dict(ref='bot/macos-latest-manifest', repo=repo, sha='expected'),
                   user=dict(login='github-actions[bot]'), changed_files=1)
         files = [dict(filename='latest/macos-latest.json', status='modified')]
-        publication.validate_pr(pr, files, repo['full_name'], 'expected')
+        publication.validate_pr(pr, files, repo['full_name'], 'expected', 'base')
+        with self.assertRaises(ValueError):
+            publication.validate_pr(pr, files, repo['full_name'], 'expected', 'advanced-base')
         for field, value in [('draft', True), ('changed_files', 2), ('head', dict(pr['head'], sha='raced')),
                              ('user', dict(login='someone')), ('base', dict(pr['base'], ref='other'))]:
             altered = copy.deepcopy(pr)

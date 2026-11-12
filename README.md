@@ -43,7 +43,7 @@ It:
 4. commits only meaningful changes to the dedicated `bot/macos-latest-manifest` branch
 5. opens or updates a manifest-only PR, validates its schema, paths, identity, and exact head, then squash merges through normal branch rules
 
-The repository Actions setting **Allow GitHub Actions to create and approve pull requests** must be enabled. The workflow requests `contents: write` and `pull-requests: write`; it does not approve reviews or bypass rules. Unchanged captures create no commit or PR. Manual runs publish only from `main`.
+The repository Actions setting **Allow GitHub Actions to create and approve pull requests** must be enabled. The workflow requests `contents: write` and `pull-requests: write`; it does not approve reviews or bypass rules. Unchanged captures create no commit or PR. Manual runs publish only from `main`. The optional `verify_publication` dispatch input explicitly republishes a fresh real capture (including its timestamp) to verify the bot PR/squash path; it defaults to false and does not affect the nightly no-change behavior. Publication stops if main has advanced before PR validation, so the next run can recapture against the new baseline.
 
 ## Downstream usage
 
